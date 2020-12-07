@@ -2,29 +2,23 @@
 
 from __future__ import with_statement
 
+import argparse 
 import os
 import sys
 import errno
 
 from fuse import FUSE, FuseOSError, Operations
 
-
 class Passthrough(Operations):
-    def __init__(self, root):
+    def __init__(self, root, log_file_path):
         self.root = root
-        self.log = open('fs.log', "w+")
-
-    # Helpers
-    # =======
+        self.log = open(log_file_path, "w+")
 
     def _full_path(self, partial):
         if partial.startswith("/"):
             partial = partial[1:]
         path = os.path.join(self.root, partial)
         return path
-
-    # Filesystem methods
-    # ==================
 
     def access(self, path, mode):
         full_path = self._full_path(path)
@@ -57,7 +51,6 @@ class Passthrough(Operations):
     def readlink(self, path):
         pathname = os.readlink(self._full_path(path))
         if pathname.startswith("/"):
-            # Path name is absolute, sanitize it.
             return os.path.relpath(pathname, self.root)
         else:
             return pathname
@@ -94,9 +87,6 @@ class Passthrough(Operations):
     def utimens(self, path, times=None):
         return os.utime(self._full_path(path), times)
 
-    # File methods
-    # ============
-
     def open(self, path, flags):
         full_path = self._full_path(path)
         return os.open(full_path, flags)
@@ -106,14 +96,12 @@ class Passthrough(Operations):
         return os.open(full_path, os.O_WRONLY | os.O_CREAT, mode)
 
     def read(self, path, length, offset, fh):
-        #print("READDDDD")
         self.log.write("R,{},{},{}\n".format(path, length, offset))
         self.log.flush()
         os.lseek(fh, offset, os.SEEK_SET)
         return os.read(fh, length)
 
     def write(self, path, buf, offset, fh):
-        #print("WRITEEEE")
         self.log.write("W,{},{},{}\n".format(path, len(buf), offset))
         self.log.flush()
         os.lseek(fh, offset, os.SEEK_SET)
@@ -134,9 +122,25 @@ class Passthrough(Operations):
         return self.flush(path, fh)
 
 
-def main(mountpoint, root):
-    FUSE(Passthrough(root), mountpoint, nothreads=True, foreground=True, allow_other=True)
+def main(mountpoint, root, log_file_path):
+    FUSE(Passthrough(root, log_file_path), 
+        mountpoint, 
+        nothreads=True, 
+        foreground=True, 
+        allow_other=True)
 
 if __name__ == '__main__':
-    main(sys.argv[2], sys.argv[1])
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-m", "--mountpoint", 
+        help="The mountpoint of the filesystem.") 
+    parser.add_argument("-s", "--storage",
+        help="The directory used as persistent storage on a slower device.")
+    parser.add_argument("-c", "--cache",
+        help="The directory used as a cache on a faster storage device.")
+    parser.add_argument("-l", "--log",
+        help="The directory of the log file.")
+    args = parser.parse_args()
+
+    main(args.mountpoint, args.storage, args.log)
 
