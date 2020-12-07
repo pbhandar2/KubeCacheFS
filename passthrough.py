@@ -121,7 +121,6 @@ class Passthrough(Operations):
     def fsync(self, path, fdatasync, fh):
         return self.flush(path, fh)
 
-
 def main(mountpoint, root, log_file_path):
     FUSE(Passthrough(root, log_file_path), 
         mountpoint, 
