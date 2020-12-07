@@ -5,6 +5,7 @@ declare -a mountpoint_arr=(
     "/url-shorten-mongodb"
     "/user-timeline-mongodb"
     "/post-storage-mongodb"
+    "/social-graph-mongodb"
 )
 
 for mnt in "${mountpoint_arr[@]}"
