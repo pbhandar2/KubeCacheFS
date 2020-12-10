@@ -6,10 +6,11 @@ import argparse
 import os
 import sys
 import errno
+import datetime 
 
 from fuse import FUSE, FuseOSError, Operations
 
-class Passthrough(Operations):
+class KubeCacheFS(Operations):
     def __init__(self, root, log_file_path):
         self.root = root
         self.log = open(log_file_path, "w+")
@@ -19,6 +20,13 @@ class Passthrough(Operations):
             partial = partial[1:]
         path = os.path.join(self.root, partial)
         return path
+
+    def _get_timestamp(self):
+        return datetime.datetime.now().timestamp()
+
+    def _write_to_log(self, ts, op, param1, param2, param3, param4):
+        self.log.write("{},{},{},{},{},{}\n".format(
+            ts, op, param1, param2, param3, param4))
 
     def access(self, path, mode):
         full_path = self._full_path(path)
@@ -56,6 +64,8 @@ class Passthrough(Operations):
             return pathname
 
     def mknod(self, path, mode, dev):
+        ts = self._get_timestamp()
+        self._write_to_log(ts, "mknod", path, mode, "nan", "nan")
         return os.mknod(self._full_path(path), mode, dev)
 
     def rmdir(self, path):
@@ -73,12 +83,16 @@ class Passthrough(Operations):
             'f_frsize', 'f_namemax'))
 
     def unlink(self, path):
+        ts = self._get_timestamp()
+        self._write_to_log(ts, "unlink", path, "nan", "nan", "nan")
         return os.unlink(self._full_path(path))
 
     def symlink(self, name, target):
         return os.symlink(target, self._full_path(name))
 
     def rename(self, old, new):
+        ts = self._get_timestamp()
+        self._write_to_log(ts, "rename", old, new, "nan", "nan")
         return os.rename(self._full_path(old), self._full_path(new))
 
     def link(self, target, name):
@@ -88,26 +102,32 @@ class Passthrough(Operations):
         return os.utime(self._full_path(path), times)
 
     def open(self, path, flags):
+        ts = self._get_timestamp()
+        self._write_to_log(ts, "open", path, flags, "nan", "nan")
         full_path = self._full_path(path)
         return os.open(full_path, flags)
 
     def create(self, path, mode, fi=None):
+        ts = self._get_timestamp()
+        self._write_to_log(ts, "create", path, mode, "nan", "nan")
         full_path = self._full_path(path)
         return os.open(full_path, os.O_WRONLY | os.O_CREAT, mode)
 
     def read(self, path, length, offset, fh):
-        self.log.write("R,{},{},{}\n".format(path, length, offset))
-        self.log.flush()
+        ts = self._get_timestamp()
+        self._write_to_log(ts, "read", path, length, offset, fh)
         os.lseek(fh, offset, os.SEEK_SET)
         return os.read(fh, length)
 
     def write(self, path, buf, offset, fh):
-        self.log.write("W,{},{},{}\n".format(path, len(buf), offset))
-        self.log.flush()
+        ts = self._get_timestamp()
+        self._write_to_log(ts, "write", path, len(buf), offset, fh)
         os.lseek(fh, offset, os.SEEK_SET)
         return os.write(fh, buf)
 
     def truncate(self, path, length, fh=None):
+        ts = self._get_timestamp()
+        self._write_to_log(ts, "truncate", path, length, "nan", "nan")
         full_path = self._full_path(path)
         with open(full_path, 'r+') as f:
             f.truncate(length)
@@ -122,7 +142,7 @@ class Passthrough(Operations):
         return self.flush(path, fh)
 
 def main(mountpoint, root, log_file_path):
-    FUSE(Passthrough(root, log_file_path), 
+    FUSE(KubeCacheFS(root, log_file_path), 
         mountpoint, 
         nothreads=True, 
         foreground=True, 
