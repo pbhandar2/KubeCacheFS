@@ -1,0 +1,1 @@
+mount -t tmpfs -o size=$2m tmpfs $1

@@ -14,6 +14,8 @@ cd $app_directory
 docker-compose up -d 
 sleep 20
 
+python3 scripts/init_social_graph.py
+
 cd $app_directory/wrk2
 $app_directory/wrk2/wrk -D exp -t 1 -c 10 -d $time \
     -L -s ./scripts/social-network/compose-post.lua \

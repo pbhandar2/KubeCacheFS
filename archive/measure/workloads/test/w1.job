@@ -1,0 +1,6 @@
+[w1]
+size=150Gi
+filesize=50Gi
+bs=4Ki
+rw=randread
+nrfiles=1 

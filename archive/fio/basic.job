@@ -1,0 +1,8 @@
+; -- start job file --
+
+[basic]
+rw=randrw 
+bs=4k
+size=128m
+
+; -- end job file --

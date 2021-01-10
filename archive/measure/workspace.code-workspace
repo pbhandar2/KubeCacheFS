@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "../../Cydonia"
+		},
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../../../hrc-plots"
+		},
+		{
+			"path": "../../DeathStarBench"
+		}
+	],
+	"settings": {}
+}

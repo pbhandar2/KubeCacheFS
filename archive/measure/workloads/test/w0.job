@@ -1,0 +1,6 @@
+[w0]
+size=300Mi
+filesize=100Mi
+bs=4Ki
+rw=randread
+nrfiles=1 

@@ -16,9 +16,9 @@ if [ $# -ne 3 ]; then
     exit 1
 fi
 
-base_dir=/KubeCache
-fs_traces_dir=/KubeCache/fs-traces
-output_log_dir=/KubeCache/output-log
+base_dir=/data/KubeCache
+fs_traces_dir=/data/KubeCache/fs-traces
+output_log_dir=/data/KubeCache/output-log
 
 create_dir_if_not_exist $base_dir
 create_dir_if_not_exist $fs_traces_dir
@@ -31,7 +31,7 @@ workload_name=$3
 app_fs_traces_dir=$fs_traces_dir/$app_name
 app_workload_fs_traces_dir=$fs_traces_dir/$app_name/$workload_name
 app_output_log_dir=$output_log_dir/$app_name
-app_workload_output_log_dir=$output_log_dir/$app_name/$workload_name
+app_workload_output_log_dir=$app_output_log_dir/$workload_name
 
 create_dir_if_not_exist $app_fs_traces_dir
 create_dir_if_not_exist $app_workload_fs_traces_dir

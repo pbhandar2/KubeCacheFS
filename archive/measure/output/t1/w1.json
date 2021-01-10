@@ -1,0 +1,3 @@
+fio: ENOSPC on laying out file, stopping
+
+fio: terminating on signal 15
