@@ -255,6 +255,8 @@ class KubeCache:
                     self._update_page(page_path, page_start_offset, offset, buf[cur_buf_index:cur_buf_index+len_write_data])
             bytes_written += len_write_data
 
+        # setting the seek where it needs to be 
+        os.lseek(fh, offset+len(buf), os.SEEK_SET)
         return bytes_written
 
     @staticmethod 
