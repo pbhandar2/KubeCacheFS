@@ -1,9 +1,14 @@
 from enum import Enum
 import json 
+import os 
+import math 
+import hashlib 
+import numpy as np 
 
 from PyMimircache.cache.lru import LRU
+from PyMimircache.cacheReader.requestItem import Req
 
-class ReplacementPolicy(Enum.IntEnum):
+class ReplacementPolicy(Enum):
     LRU = 1
     LFU = 2
     MRU = 3
@@ -12,15 +17,17 @@ class KubeCache:
     """ KubeCache handles caching for KubeCacheFS """
 
     def __init__(self, config):
-        self.cache_path = config["cache_path"]
+        self.cache_dir = config["cache_dir"]
         self.page_size = config["page_size"]
-        self.ignore_dir_list = config["ignore_dir"]
-        self.cache_list = _get_cache_list_from_config(config)
+        self.ignore_dir_list = config["ignore_dir"] if "ignore_dir" in config else []
+        self.cache_config_list = config["caches"]
+        self.cache_list = KubeCache._get_cache_list_from_config(config)
 
     @staticmethod
     def _get_cache_list_from_config(config):
         cache_list = []
-        for cache in config:
+        print(config)
+        for cache in config["caches"]:
             if cache["replacement_policy"]=="LRU":
                 cache_list.append(LRU(cache["size"]))
         return cache_list 
@@ -34,7 +41,7 @@ class KubeCache:
         start_page = math.floor(offset/self.page_size)
         end_page = math.floor((offset+length-1)/self.page_size)
         
-        page_array = np.empty(shape=(end_page-start_page+1, 2))
+        page_array = np.empty(shape=(end_page-start_page+1, 2), dtype=int)
         for page_array_index, page_index in enumerate(range(start_page, end_page+1)):
             page_start_offset = page_index*self.page_size
             page_array[page_array_index] = np.array([page_index,page_start_offset])
@@ -68,7 +75,7 @@ class KubeCache:
 
             :return: None """
 
-        fh = os.open(cache_path, os.O_WRONLY)
+        fh = os.open(page_path, os.O_WRONLY)
 
         # check if you need to seek before writing 
         if req_offset>page_offset:
@@ -83,7 +90,7 @@ class KubeCache:
 
             :return None """
 
-        page_data = self._read_page(os.path.join(self.cache_path, cache_req.item_id))
+        page_data = self._read_page(os.path.join(self.cache_dir, cache_req.item_id))
         fh = os.open(cache_req.path, os.O_WRONLY)
         page_index = int(cache_req.item_id.split("_")[1])
         os.lseek(fh, page_index*self.page_size, os.SEEK_SET)
@@ -96,31 +103,30 @@ class KubeCache:
             :param cache_index: the index of the cache to be evicted from 
 
             :return None """
-        evicted_req = self.cache_list[cache_index].evict()
+        evicted_id, evicted_req = self.cache_list[cache_index].evict()
 
-        # check if page is dirty 
         if evicted_req.op == 1:
             self._flush_page(evicted_req)
-        os.remove(os.path.join(self.cache_path, evicted_req.req_id))
+        os.remove(os.path.join(self.cache_dir, evicted_id))
 
 
-    def read(self, path, length, offset, fh):        
+    def read(self, path, length, offset, fh):      
         bytes_read = bytes()
 
         # check if the any directory in the path is in the ignore list  
-        for ignore_dir in ignore_dir_list:
+        for ignore_dir in self.ignore_dir_list:
             if ignore_dir in path:
                 os.lseek(fh, offset, os.SEEK_SET)
                 return os.read(fh, length)
 
-        # check if the path belong to any cache 
         cache_index = None 
-        for cache_index, cache in enumerate(cache_list):
-            if cache.dir == "*" and cur_cache is None:
-                cur_cache = cache
-            elif cache.dir in path:
-                cur_cache = cache 
-        else:
+        for cur_cache_index, cache in enumerate(self.cache_config_list):
+            if cache["dir"] == "*" and cache_index is None:
+                cache_index = cur_cache_index
+            elif cache["dir"] in path:
+                cache_index = cur_cache_index
+        
+        if cache_index is None:
             os.lseek(fh, offset, os.SEEK_SET)
             return os.read(fh, length)
 
@@ -128,37 +134,37 @@ class KubeCache:
         for page_index, page_start_offset in page_array:
 
             page_id = self._get_page_id(path, page_index)
-            page_path = os.path.join(self.cache_path, page_id)
+            page_path = os.path.join(self.cache_dir, page_id)
 
-            if os.path.isfile(cache_path):
-                self.cache._update(cache_file_name)
-                page_data = self._read_page(cache_path, page_index)
+            if os.path.isfile(page_path):
+                self.cache_list[cache_index]._update(page_id)
+                page_data = self._read_page(page_id, page_index)
             else:
-                if len(self.cache) == self.cachesize:
-                    self._evict()
+                if len(self.cache_list[cache_index]) == self.cache_config_list[cache_index]["size"]:
+                    self._evict(cache_index)
                 
-                cache_req = Req(cache_file_name, self.page_size, 0, path)
-                self.cache._insert(cache_req)
+                cache_req = Req(page_id, self.page_size, 0, path)
+                self.cache_list[cache_index]._insert(cache_req)
 
                 # read the page from file 
                 os.lseek(fh, page_start_offset, os.SEEK_SET)
                 page_data = os.read(fh, self.page_size)
 
                 # write the page to cache 
-                page_fh = os.open(cache_path, os.O_CREAT|os.O_WRONLY)
+                page_fh = os.open(page_path, os.O_CREAT|os.O_WRONLY)
                 os.write(page_fh, page_data)
                 os.close(page_fh)
 
             # Decide what bytes of the page need to be returned 
             # Case 1: This is the first and last page. 
             if page_index==0 and len(page_array)==1:
-                bytes_read += page_data[offset-start_offset:offset-start_offset+length]
+                bytes_read += page_data[offset-page_start_offset:offset-page_start_offset+length]
             # Case 2: This is the first page. 
             elif page_index==0:
-                bytes_read += page_data[offset-start_offset:]
+                bytes_read += page_data[offset-page_start_offset:]
             # Case 3: This is the last page. 
             elif page_index==len(page_array)-1:
-                bytes_read += page_data[:end_offset+1]
+                bytes_read += page_data[:offset+length-page_start_offset+1]
             # Case 4: This is the middle page 
             else:
                 bytes_read += page_data
@@ -167,25 +173,89 @@ class KubeCache:
         os.lseek(fh, offset+length, os.SEEK_SET)
         return bytes_read
 
-    def insert(self, page):
-        pass
+    def write(self, path, buf, offset, fh):
 
-    def read_hit(self, page):
-        pass
+        # check if the any directory in the path is in the ignore list  
+        for ignore_dir in self.ignore_dir_list:
+            if ignore_dir in path:
+                os.lseek(fh, offset, os.SEEK_SET)
+                return os.write(fh, buf)
 
-    def write_hit(self, page):
-        pass 
+        cache_index = None 
+        for cur_cache_index, cache in enumerate(self.cache_config_list):
+            if cache["dir"] == "*" and cache_index is None:
+                cache_index = cur_cache_index
+            elif cache["dir"] in path:
+                cache_index = cur_cache_index
+        
+        if cache_index is None:
+            os.lseek(fh, offset, os.SEEK_SET)
+            return os.write(fh, buf)
 
-    def read_miss(self, page):
-        pass 
+        cur_buf_index = 0
+        bytes_written = 0 
+        write_len = len(buf)
+        page_array = self._get_pages(offset, len(buf))
+        """
+            We need page_index and page_array_index. page_array_index is needed in order to know 
+            if it is the first page of the write request. The first and last page of the write re
+            quest is not written totally so we need to handle the case where we partially write 
+            a page. We need page_index to generate out page_path. 
+        """
+        for page_array_index, (page_index, page_start_offset) in enumerate(page_array):
 
-    def write_miss(self, page):
-        pass 
+            page_id = self._get_page_id(path, page_index)
+            page_path = os.path.join(self.cache_dir, page_id)
 
-    def read(self,)
+            # Find the amount of data to be written to the page 
+            # Case 1: This is the first and last page. 
+            if page_array_index==0 and len(page_array)==1:
+                len_write_data = len(buf)
+            # Case 2: This is the first page. 
+            elif page_array_index==0:
+                len_write_data = page_start_offset + self.page_size - offset
+            # Case 3: This is the last page. 
+            elif page_array_index==len(page_array)-1:
+                len_write_data = offset+write_len - page_start_offset
+            # Case 4: This is the middle page 
+            else:
+                len_write_data = self.page_size
 
-    def access(self, page):
-        pass
+            if os.path.isfile(page_path):
+                self.cache_list[cache_index]._update(page_id)
+                self._update_page(page_path, page_start_offset, offset, buf[cur_buf_index:cur_buf_index+len_write_data])
+                self.cache_list[cache_index].cacheline_dict[page_id]['op'] = 1
+                cur_buf_index += len_write_data
+            else:
+                if len(self.cache_list[cache_index]) == self.cache_config_list[cache_index]["size"]:
+                    self._evict(cache_index)
+
+                cache_req = Req(page_id, self.page_size, 1, path)
+                self.cache_list[cache_index]._insert(cache_req)
+
+                # if page aligned, just write to cache 
+                if page_start_offset==offset and len_write_data==self.page_size:
+                    page_fh = os.open(page_path, os.O_CREAT|os.O_WRONLY)
+                    os.write(page_fh, buf[cur_buf_index:cur_buf_index+len_write_data])
+                    os.close(page_fh)
+                # if not page aligned, fetch the page first then update it 
+                else:
+                    # fetch the page 
+                    file_fh = os.open(path, os.O_RDONLY)
+                    os.lseek(file_fh, page_start_offset, os.SEEK_SET)
+                    stale_page_data = os.read(file_fh, self.page_size)
+                    os.close(file_fh)
+
+                    # write stale data to cache 
+                    stale_page_fh = os.open(page_path, os.O_CREAT|os.O_WRONLY)
+                    os.write(stale_page_fh, stale_page_data)
+                    os.close(stale_page_fh)
+
+                    # now update this page 
+                    self._update_page(page_path, page_start_offset, offset, buf[cur_buf_index:cur_buf_index+len_write_data])
+            bytes_written += len_write_data
+
+        return bytes_written
 
     @staticmethod 
     def get_config_from_file(config_file):
