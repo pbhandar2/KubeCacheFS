@@ -1,0 +1,13 @@
+{
+    "cache_dir":"/cache",
+    "page_size":4096,
+    "caches":[{
+        "replacement_policy":"LRU",
+        "size":5,
+        "dir":"dir1"
+    },{
+        "replacement_policy":"LRU",
+        "size":5,
+        "dir":"dir2"
+    }]
+}

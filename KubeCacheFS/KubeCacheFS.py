@@ -8,6 +8,7 @@ import errno
 import argparse
 import math 
 import hashlib 
+import json 
 import numpy as np
 
 from fuse import FUSE, FuseOSError, Operations
@@ -28,7 +29,7 @@ class KubeCacheFS(Operations):
     def _get_config_from_file(config_file):
         config = {}
         with open(config_file) as f:
-            config = json.loads(f)
+            config = json.load(f)
         return config
 
     # Helper Functions 
@@ -147,8 +148,8 @@ class KubeCacheFS(Operations):
     def fsync(self, path, fdatasync, fh):
         return self.flush(path, fh)
 
-def main(mountpoint, root, cache_path):
-    FUSE(KubeCacheFS(root, cache_path), 
+def main(mountpoint, root, cache_path, cache_config_file):
+    FUSE(KubeCacheFS(root, cache_path, cache_config_file), 
         mountpoint, 
         nothreads=True, 
         foreground=True, 
@@ -162,8 +163,8 @@ if __name__ == '__main__':
         help="The directory used as persistent storage on a slower device.")
     parser.add_argument("-c", "--cache",
         help="The directory used as a cache on a faster storage device.")
-    parser.add_argument("-l", "--log",
-        help="The path of the log file.")
+    parser.add_argument("-k", "--kcacheconfig",
+        help="The configuration file for KubeCache.")
     args = parser.parse_args()
 
-    main(args.mountpoint, args.storage, args.cache)
+    main(args.mountpoint, args.storage, args.cache, args.kcacheconfig)

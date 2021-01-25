@@ -138,7 +138,7 @@ class KubeCache:
 
             if os.path.isfile(page_path):
                 self.cache_list[cache_index]._update(page_id)
-                page_data = self._read_page(page_id, page_index)
+                page_data = self._read_page(page_path)
             else:
                 if len(self.cache_list[cache_index]) == self.cache_config_list[cache_index]["size"]:
                     self._evict(cache_index)
@@ -223,8 +223,10 @@ class KubeCache:
 
             if os.path.isfile(page_path):
                 self.cache_list[cache_index]._update(page_id)
+                cur_req = self.cache_list[cache_index].cacheline_dict[page_id]
+                new_req = Req(cur_req.item_id, self.page_size, 1, path)
+                self.cache_list[cache_index].cacheline_dict[page_id] = new_req
                 self._update_page(page_path, page_start_offset, offset, buf[cur_buf_index:cur_buf_index+len_write_data])
-                self.cache_list[cache_index].cacheline_dict[page_id]['op'] = 1
                 cur_buf_index += len_write_data
             else:
                 if len(self.cache_list[cache_index]) == self.cache_config_list[cache_index]["size"]:
